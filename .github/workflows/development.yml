@@ -1,0 +1,199 @@
+name: Development
+
+on:
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-22.04
+    outputs:
+      has_php_changed: ${{ steps.changes.outputs.php }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        ref: ${{ github.head_ref }}
+
+    - name: Detect file changes
+      id: changes
+      uses: dorny/paths-filter@v3
+      with:
+        filters: |
+          php:
+            - '**/*.php'
+            - 'composer.json'
+            - 'src/**'
+            - 'tests/**'
+            - 'phpunit.xml'
+            - 'phpstan.neon'
+
+  check-php-quality:
+    name: Check PHP Code Quality
+    needs: detect-changes
+    if: needs.detect-changes.outputs.has_php_changed == 'true'
+    runs-on: ubuntu-22.04
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.head_ref }}
+
+    - name: Get PHP version from composer.json
+      id: php-version
+      run: |
+        # Extract PHP version and strip constraint operators (^, ~, >=, etc.)
+        PHP_VERSION=$(jq -r '.require.php' composer.json | sed 's/[^0-9.]*//g')
+        echo "version=${PHP_VERSION}" >> "${GITHUB_OUTPUT}"
+        echo "Using PHP version: ${PHP_VERSION}"
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ steps.php-version.outputs.version }}
+        coverage: none
+
+    - name: Get composer cache directory
+      id: composer-cache
+      run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.composer-cache.outputs.dir }}
+        key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+        restore-keys: ${{ runner.os }}-composer
+
+    - name: Install dependencies
+      run: composer install --no-progress
+
+    - name: Check code formatting
+      run: composer format:check
+
+    - name: Run static analysis
+      run: composer stan
+
+  run-php-tests:
+    name: Run PHP Tests
+    needs: [detect-changes, check-php-quality]
+    if: |
+      always() &&
+      needs.detect-changes.outputs.has_php_changed == 'true' &&
+      needs.check-php-quality.result == 'success'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS Apple Silicon (ARM64) - PHP 8.1, 8.2, 8.3, 8.4
+          - os: macos-14
+            platform: darwin-arm64
+            php-version: '8.1'
+          - os: macos-14
+            platform: darwin-arm64
+            php-version: '8.2'
+          - os: macos-14
+            platform: darwin-arm64
+            php-version: '8.3'
+          - os: macos-14
+            platform: darwin-arm64
+            php-version: '8.4'
+          # macOS Intel (x64) - PHP 8.1, 8.2, 8.3, 8.4
+          - os: macos-13
+            platform: darwin-x64
+            php-version: '8.1'
+          - os: macos-13
+            platform: darwin-x64
+            php-version: '8.2'
+          - os: macos-13
+            platform: darwin-x64
+            php-version: '8.3'
+          - os: macos-13
+            platform: darwin-x64
+            php-version: '8.4'
+          # Linux ARM64 (GNU libc) - PHP 8.1, 8.2, 8.3, 8.4
+          - os: ubuntu-22.04-arm
+            platform: linux-arm64-gnu
+            php-version: '8.1'
+          - os: ubuntu-22.04-arm
+            platform: linux-arm64-gnu
+            php-version: '8.2'
+          - os: ubuntu-22.04-arm
+            platform: linux-arm64-gnu
+            php-version: '8.3'
+          - os: ubuntu-22.04-arm
+            platform: linux-arm64-gnu
+            php-version: '8.4'
+          # Linux x64 (GNU libc) - PHP 8.1, 8.2, 8.3, 8.4
+          - os: ubuntu-22.04
+            platform: linux-x64-gnu
+            php-version: '8.1'
+          - os: ubuntu-22.04
+            platform: linux-x64-gnu
+            php-version: '8.2'
+          - os: ubuntu-22.04
+            platform: linux-x64-gnu
+            php-version: '8.3'
+          - os: ubuntu-22.04
+            platform: linux-x64-gnu
+            php-version: '8.4'
+          # Windows x64 (MSVC) - PHP 8.1, 8.2, 8.3, 8.4
+          - os: windows-2022
+            platform: win32-x64-msvc
+            php-version: '8.1'
+          - os: windows-2022
+            platform: win32-x64-msvc
+            php-version: '8.2'
+          - os: windows-2022
+            platform: win32-x64-msvc
+            php-version: '8.3'
+          - os: windows-2022
+            platform: win32-x64-msvc
+            php-version: '8.4'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.head_ref }}
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ matrix.php-version }}
+        coverage: none
+
+    - name: Get composer cache directory
+      id: composer-cache
+      run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.composer-cache.outputs.dir }}
+        key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+        restore-keys: ${{ runner.os }}-composer
+
+    - name: Install dependencies
+      run: composer install --no-progress
+
+    - name: Run unit tests
+      run: composer test:unit
+
+    - name: Run integration tests
+      env:
+        CS_CLIENT_ID: ${{ secrets.CS_CLIENT_ID }}
+        CS_CLIENT_ACCESS_KEY: ${{ secrets.CS_CLIENT_ACCESS_KEY }}
+        CS_CLIENT_KEY: ${{ secrets.CS_CLIENT_KEY }}
+        CS_WORKSPACE_CRN: ${{ secrets.CS_WORKSPACE_CRN }}
+      run: composer test:integration

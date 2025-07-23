@@ -1,0 +1,10 @@
+vendor/
+
+composer.lock
+.phpunit.cache
+phpstan.tests.neon
+
+.env
+cipherstash.secret.toml
+
+cipherstash-*.sql
