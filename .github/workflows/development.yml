@@ -171,6 +171,7 @@ jobs:
       uses: shivammathur/setup-php@v2
       with:
         php-version: ${{ matrix.php-version }}
+        extensions: ffi
         coverage: none
 
     - name: Get composer cache directory
