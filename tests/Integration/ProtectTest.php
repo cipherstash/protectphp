@@ -12,6 +12,15 @@ use PHPUnit\Framework\TestCase;
 
 class ProtectTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        if (PHP_OS_FAMILY === 'Windows') {
+            $this->markTestSkipped('Integration testing is disabled on Windows due to known FFI segmentation faults.');
+        }
+    }
+
     public function test_encrypt_decrypt_string_roundtrip(): void
     {
         $field = 'users.email';
