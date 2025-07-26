@@ -244,19 +244,25 @@ class Protect
     /**
      * Validate value type compatibility for encryption operations.
      *
-     * @return array{value: mixed, data_type: DataType} Validated value and its detected PHP data type
+     * @param  mixed  $value  Value to validate
+     * @param  bool  $throw  Whether to throw exception for unsupported values
+     * @return array{value: mixed, data_type: DataType|null} Validated value and its detected PHP data type
      *
-     * @throws ValidationException When value type is unsupported for encryption
+     * @throws ValidationException When value type is unsupported and throw is true
      */
-    private static function validateValue(mixed $value): array
+    private static function validateValue(mixed $value, bool $throw = false): array
     {
         $dataType = DataConverter::detectType($value);
 
-        if ($dataType === null) {
+        if ($dataType instanceof DataType) {
+            return ['value' => $value, 'data_type' => $dataType];
+        }
+
+        if ($throw) {
             throw ValidationException::unsupportedValue(get_debug_type($value));
         }
 
-        return ['value' => $value, 'data_type' => $dataType];
+        return ['value' => $value, 'data_type' => null];
     }
 
     /**
@@ -353,7 +359,12 @@ class Protect
      *
      * @param  array<string, mixed>  $options  Options to validate
      * @param  array<int, string>  $allowedOptionKeys  Allowed option keys
-     * @return array<string, mixed> Validated options with allowed keys only
+     * @return array{
+     *     cast_as?: string,
+     *     indexes?: array<string, mixed>,
+     *     context?: array<string, mixed>,
+     *     skip?: bool
+     * } Validated options with allowed keys only
      *
      * @throws ValidationException When option types are invalid
      */
@@ -406,7 +417,7 @@ class Protect
      * Validate attributes for encryption operations.
      *
      * @param  array<string, mixed>  $attributes  Attributes with column names as keys
-     * @return array<string, array{value: mixed, data_type: DataType}> Validated attributes with column names as keys
+     * @return array<string, array{value: mixed, data_type: DataType|null}> Validated attributes with column names as keys
      *
      * @throws ValidationException When column names are invalid or values are unsupported
      */
@@ -534,7 +545,7 @@ class Protect
      * Validate fields structure and field format.
      *
      * @param  array<string, mixed>  $fields  Fields to validate
-     * @return array<string, array{value: mixed, data_type: DataType}> Validated fields with field names as keys
+     * @return array<string, array{value: mixed, data_type: DataType|null}> Validated fields with field names as keys
      *
      * @throws ValidationException When field format is invalid or values are unsupported
      */
@@ -544,7 +555,7 @@ class Protect
 
         foreach ($fields as $field => $value) {
             $validatedField = self::validateField($field);
-            $validatedValue = self::validateValue($value);
+            $validatedValue = self::validateValue(value: $value, throw: true);
 
             $validatedFields[$validatedField['field']] = $validatedValue;
         }
@@ -628,29 +639,33 @@ class Protect
      * Resolve options by applying defaults after validation.
      *
      * @param  array<string, mixed>  $options  Options to resolve
-     * @return array<string, mixed> Resolved options with defaults applied
+     * @param  DataType|null  $dataType  Data type or null for unsupported values
+     * @return array{
+     *     cast_as: string,
+     *     indexes: array<string, mixed>,
+     *     context: array<string, mixed>|null,
+     *     skip: bool
+     * } Resolved options with defaults applied
      */
-    private static function resolveOptions(array $options, DataType $dataType): array
+    private static function resolveOptions(array $options, ?DataType $dataType): array
     {
-        if (! isset($options['cast_as'])) {
-            $options['cast_as'] = $dataType->value;
-        } else {
-            $options['cast_as'] = self::mapCastAsToDataType($options['cast_as'], $dataType);
+        if ($dataType === null) {
+            return [
+                'cast_as' => 'string',
+                'indexes' => [],
+                'context' => null,
+                'skip' => true,
+            ];
         }
 
-        if (! isset($options['indexes'])) {
-            $options['indexes'] = self::getDefaultIndexes($dataType);
-        }
-
-        if (! isset($options['context'])) {
-            $options['context'] = null;
-        }
-
-        if (! isset($options['skip'])) {
-            $options['skip'] = false;
-        }
-
-        return $options;
+        return [
+            'cast_as' => isset($options['cast_as'])
+                ? (self::mapCastAsToDataType($options['cast_as'], $dataType) ?? 'string')
+                : $dataType->value,
+            'indexes' => $options['indexes'] ?? self::getDefaultIndexes($dataType),
+            'context' => $options['context'] ?? null,
+            'skip' => $options['skip'] ?? false,
+        ];
     }
 
     /**
@@ -678,7 +693,7 @@ class Protect
      * Resolve field-based options for bulk operations.
      *
      * @param  array<string, array<string, mixed>>  $validatedOptions  Validated options per field
-     * @param  array<string, array{value: mixed, data_type: DataType}>  $validatedFields  Validated fields
+     * @param  array<string, array{value: mixed, data_type: DataType|null}>  $validatedFields  Validated fields
      * @return array<string, array<string, mixed>> Resolved options per field
      *
      * @throws ValidationException When field format is invalid or table/column names are invalid
@@ -705,7 +720,12 @@ class Protect
      * @param  string  $table  Database table name
      * @param  string  $column  Database column name
      * @param  array<string, mixed>  $resolvedOptions  Resolved options for the field
-     * @return array<string, mixed> Field configuration structure
+     * @return array{
+     *     table: string,
+     *     column: string,
+     *     cast_as: string,
+     *     indexes: array<string, mixed>
+     * } Field configuration structure
      */
     private static function buildFieldConfig(string $table, string $column, array $resolvedOptions): array
     {
@@ -847,7 +867,7 @@ class Protect
     /**
      * Build search term items for encryption.
      *
-     * @param  array<string, array{value: mixed, data_type: DataType}>  $validatedFields  Validated fields
+     * @param  array<string, array{value: mixed, data_type: DataType|null}>  $validatedFields  Validated fields
      * @param  array<string, array<string, mixed>>  $resolvedOptions  Resolved options per field
      * @return array<int, array<string, mixed>> Items for search term creation
      *
@@ -860,7 +880,7 @@ class Protect
 
         foreach ($validatedFields as $field => $validatedValue) {
             $validatedField = self::validateField($field);
-            $resolvedFieldOptions = $resolvedOptions[$field];
+            $resolvedFieldOptions = $resolvedOptions[$validatedField['field']];
 
             $items[] = [
                 'plaintext' => DataConverter::toString($validatedValue['value'], $resolvedFieldOptions['cast_as']),

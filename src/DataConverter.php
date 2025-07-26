@@ -22,9 +22,9 @@ class DataConverter
      * Detect the data type of a value for encryption processing.
      *
      * @param  mixed  $value  Value to detect
-     * @return DataType|null Detected data type or null when unsupported
+     * @return DataType|mixed Detected data type or original value when unsupported
      */
-    public static function detectType(mixed $value): ?DataType
+    public static function detectType(mixed $value): mixed
     {
         return DataType::fromValue($value);
     }

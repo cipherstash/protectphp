@@ -12,11 +12,11 @@ use Exception;
 final class ValidationException extends Exception
 {
     /**
-     * Create a new exception for when a PHP data type is not supported for encryption.
+     * Create a new exception for when a PHP data type is not supported.
      */
     public static function unsupportedValue(string $type): self
     {
-        return new self("The [{$type}] PHP data type is not supported for encryption.");
+        return new self("The [{$type}] PHP data type is not supported.");
     }
 
     /**

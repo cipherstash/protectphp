@@ -44,14 +44,14 @@ class ProtectTest extends TestCase
         }
     }
 
-    public function test_validate_value_throws_exception_for_null(): void
+    public function test_validate_value_throws_exception_for_unsupported_value_when_throw_is_true(): void
     {
         $reflection = new ReflectionClass(Protect::class);
         $method = $reflection->getMethod('validateValue');
         $method->setAccessible(true);
 
         $this->expectException(ValidationException::class);
-        $method->invokeArgs(null, [null]);
+        $method->invokeArgs(null, [null, true]);
     }
 
     public function test_validate_field_accepts_valid_format(): void

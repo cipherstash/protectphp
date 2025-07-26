@@ -63,9 +63,9 @@ enum DataType: string
      * Detect the appropriate data type for a given value.
      *
      * @param  mixed  $value  Value to detect
-     * @return DataType|null Detected data type or null when unsupported
+     * @return DataType|mixed Detected data type or original value when unsupported
      */
-    public static function fromValue(mixed $value): ?self
+    public static function fromValue(mixed $value): mixed
     {
         if (is_string($value)) {
             return self::TEXT;
@@ -91,7 +91,7 @@ enum DataType: string
             return self::JSONB;
         }
 
-        return null;
+        return $value;
     }
 
     /**
